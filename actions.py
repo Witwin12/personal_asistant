@@ -1,10 +1,12 @@
 import os
 import subprocess
+import urllib.parse
+import webbrowser
 from pathlib import Path
 
 
 class OSActions:
-    """คำสั่งเปิด/ปิดโปรแกรม และสร้าง/อ่าน/แก้ไข/ลบไฟล์ในเครื่อง (OS Commands)"""
+    """คำสั่งเปิด/ปิดโปรแกรม เปิดเว็บไซต์ ค้นหาข้อมูล และจัดการไฟล์ในเครื่อง (OS Commands)"""
 
     def __init__(self, workspace_dir: str | None = None):
         self.workspace_dir = Path(workspace_dir) if workspace_dir else Path.cwd()
@@ -25,6 +27,14 @@ class OSActions:
                 return self.open_app(target)
             elif action == "close_app":
                 return self.close_app(target)
+            elif action == "open_website":
+                return self.open_website(target)
+            elif action == "search_google":
+                query = target or content
+                return self.search_google(query)
+            elif action == "search_youtube":
+                query = target or content
+                return self.search_youtube(query)
             elif action == "create_file":
                 return self.write_file(target, content="")
             elif action == "write_file":
@@ -41,6 +51,36 @@ class OSActions:
         except Exception as e:
             print(f"[Actions] เกิดข้อผิดพลาดระหว่างรันคำสั่ง {action}: {e}")
             return f"เกิดข้อผิดพลาดในการทำงาน: {e}"
+
+    def open_website(self, url: str) -> str:
+        """เปิดเว็บไซต์ด้วยเบราว์เซอร์เริ่มต้นของระบบ"""
+        if not url:
+            return "ไม่ได้ระบุเว็บไซต์ที่ต้องการเปิดค่ะ"
+        if not url.startswith(("http://", "https://")):
+            url = f"https://{url}"
+        print(f"[Actions] กำลังเปิดเว็บไซต์: {url}")
+        webbrowser.open(url)
+        return f"เปิดเว็บไซต์ {url} เรียบร้อยแล้ว"
+
+    def search_google(self, query: str) -> str:
+        """เปิดเบราว์เซอร์และค้นหาข้อมูลใน Google"""
+        if not query:
+            return "ไม่ได้ระบุคำค้นหาค่ะ"
+        encoded_query = urllib.parse.quote_plus(query)
+        search_url = f"https://www.google.com/search?q={encoded_query}"
+        print(f"[Actions] กำลังค้นหาใน Google: {query} ({search_url})")
+        webbrowser.open(search_url)
+        return f"ค้นหา {query} ใน Google เรียบร้อยแล้ว"
+
+    def search_youtube(self, query: str) -> str:
+        """เปิดเบราว์เซอร์และค้นหาวิดีโอใน YouTube"""
+        if not query:
+            return "ไม่ได้ระบุคำค้นหาค่ะ"
+        encoded_query = urllib.parse.quote_plus(query)
+        search_url = f"https://www.youtube.com/results?search_query={encoded_query}"
+        print(f"[Actions] กำลังค้นหาใน YouTube: {query} ({search_url})")
+        webbrowser.open(search_url)
+        return f"ค้นหา {query} ใน YouTube เรียบร้อยแล้ว"
 
     def open_app(self, target: str) -> str:
         """เปิดโปรแกรมหรือไฟล์ด้วยค่าเริ่มต้นของระบบ"""
