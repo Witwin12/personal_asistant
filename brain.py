@@ -3,76 +3,44 @@ import json
 from google import genai
 from google.genai import types
 
-SYSTEM_PROMPT = """
-คุณคือผู้ช่วยอัจฉริยะสั่งงานด้วยเสียง (Voice AI Assistant)
-หน้าที่ของคุณคือตีความคำสั่งของผู้ใช้และตอบกลับเป็นรูปแบบ JSON เท่านั้น โดยมีโครงสร้างดังนี้:
-
-{
-  "action": "ชื่อคำสั่ง (none | open_app | close_app | open_website | search_google | search_youtube | play_youtube | create_file | read_file | write_file | delete_file | exit)",
-  "params": {
-    "target": "ชื่อโปรแกรม, URL เว็บไซต์, คำค้นหา, ชื่อเพลง/วิดีโอ หรือ path ของไฟล์ (ถ้ามี)",
-    "content": "เนื้อหาที่ต้องการเขียนลงไฟล์ หรือรายละเอียดเพิ่มเติม (ถ้ามี)"
-  },
-  "reply": "ข้อความตอบกลับผู้ใช้เป็นภาษาไทยเหมือนเพื่อนสาวและเป็นธรรมชาติ สำหรับนำไปแปลงเป็นเสียงพูด"
+# รายการ action ที่รองรับ: ชื่อ -> ความหมายของ target / content
+ACTIONS = {
+    "none": "คุยทั่วไป ไม่ต้องสั่งงาน",
+    "open_app": "target=ชื่อโปรแกรม เช่น notepad.exe",
+    "close_app": "target=ชื่อโปรเซส",
+    "open_website": "target=URL",
+    "search_google": "target=คำค้นหา",
+    "search_youtube": "target=คำค้นหา (แสดงผลการค้นหา)",
+    "play_youtube": "target=ชื่อเพลง/วิดีโอ (เปิดเล่นทันที)",
+    "create_file": "target=path ไฟล์",
+    "write_file": "target=path ไฟล์, content=ข้อความ",
+    "read_file": "target=path ไฟล์",
+    "delete_file": "target=path ไฟล์",
+    "exit": "ปิดระบบ",
 }
 
-ตัวอย่าง:
-ผู้ใช้: "เปิดโน้ตแพดให้หน่อย"
-ตอบกลับ:
-{
-  "action": "open_app",
-  "params": {"target": "notepad.exe", "content": ""},
-  "reply": "กำลังเปิดโปรแกรม Notepad ให้ค่ะ"
-}
+SYSTEM_PROMPT = (
+    "คุณคือผู้ช่วยสั่งงานด้วยเสียงบน Windows ตีความคำสั่งผู้ใช้แล้วเลือก action:\n"
+    + "\n".join(f"- {name}: {desc}" for name, desc in ACTIONS.items())
+    + "\nreply = คำตอบภาษาไทยสั้น สุภาพ เป็นธรรมชาติ สำหรับอ่านออกเสียง"
+)
 
-ผู้ใช้: "เปิดเว็บยูทูปให้หน่อย" หรือ "เข้าเว็บ github.com"
-ตอบกลับ:
-{
-  "action": "open_website",
-  "params": {"target": "https://www.youtube.com", "content": ""},
-  "reply": "กำลังเปิดเว็บไซต์ YouTube ให้ค่ะ"
-}
-
-ผู้ใช้: "ค้นหากูเกิลว่า วิธีทำข้าวผัดกุ้ง" หรือ "หาข้อมูลใน Google เรื่อง Python AI"
-ตอบกลับ:
-{
-  "action": "search_google",
-  "params": {"target": "วิธีทำข้าวผัดกุ้ง", "content": ""},
-  "reply": "กำลังค้นหาวิธีทำข้าวผัดกุ้งใน Google ให้ค่ะ"
-}
-
-ผู้ใช้: "เปิดเพลงทรงอย่างแบดให้หน่อย" หรือ "เล่นวิดีโอสรุปข่าววันนี้ในยูทูป" หรือ "อยากฟังเพลงแจ๊สเพราะๆ"
-ตอบกลับ:
-{
-  "action": "play_youtube",
-  "params": {"target": "เพลงทรงอย่างแบด", "content": ""},
-  "reply": "กำลังเปิดเพลงทรงอย่างแบดบน YouTube ให้ค่ะ"
-}
-
-ผู้ใช้: "ค้นหาช่องสอนเขียนโปรแกรมในยูทูปให้หน่อย"
-ตอบกลับ:
-{
-  "action": "search_youtube",
-  "params": {"target": "สอนเขียนโปรแกรม", "content": ""},
-  "reply": "กำลังค้นหาช่องสอนเขียนโปรแกรมใน YouTube ให้ค่ะ"
-}
-
-ผู้ใช้: "สร้างไฟล์ชื่อ test.txt แล้วเขียนว่าสวัสดีชาวโลก"
-ตอบกลับ:
-{
-  "action": "write_file",
-  "params": {"target": "test.txt", "content": "สวัสดีชาวโลก"},
-  "reply": "สร้างไฟล์ test.txt และบันทึกข้อความเรียบร้อยแล้วค่ะ"
-}
-
-ผู้ใช้: "ปิดระบบ / เลิกทำงาน"
-ตอบกลับ:
-{
-  "action": "exit",
-  "params": {"target": "", "content": ""},
-  "reply": "รับทราบค่ะ แล้วพบกันใหม่นะคะ สวัสดีค่ะ"
-}
-"""
+# บังคับรูปแบบ JSON ผ่าน schema แทนการใส่ตัวอย่างใน prompt
+RESPONSE_SCHEMA = types.Schema(
+    type=types.Type.OBJECT,
+    properties={
+        "action": types.Schema(type=types.Type.STRING, enum=list(ACTIONS)),
+        "params": types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "target": types.Schema(type=types.Type.STRING),
+                "content": types.Schema(type=types.Type.STRING),
+            },
+        ),
+        "reply": types.Schema(type=types.Type.STRING),
+    },
+    required=["action", "params", "reply"],
+)
 
 
 class AIBrain:
@@ -96,6 +64,7 @@ class AIBrain:
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPT,
                     response_mime_type="application/json",
+                    response_schema=RESPONSE_SCHEMA,
                     temperature=0.2,
                 ),
             )
