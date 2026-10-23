@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import subprocess
 import urllib.parse
 import urllib.request
@@ -130,12 +131,74 @@ class OSActions:
         webbrowser.open(search_url)
         return f"เปิดผลการค้นหา {query} บน YouTube เรียบร้อยแล้ว"
 
+    def _find_start_menu_shortcut(self, name: str) -> str | None:
+        """ค้นหา shortcut (.lnk) ของโปรแกรมใน Start Menu ตามชื่อ"""
+        start_menu_dirs = [
+            Path(os.environ.get("APPDATA", "")) / "Microsoft/Windows/Start Menu/Programs",
+            Path(os.environ.get("PROGRAMDATA", "")) / "Microsoft/Windows/Start Menu/Programs",
+        ]
+        query = name.lower().removesuffix(".exe").strip()
+        partial_matches = []
+
+        for base in start_menu_dirs:
+            if not base.exists():
+                continue
+            for lnk in base.rglob("*.lnk"):
+                stem = lnk.stem.lower()
+                if "uninstall" in stem:
+                    continue
+                if stem == query:
+                    return str(lnk)  # ชื่อตรงเป๊ะ ใช้ทันที
+                if query in stem:
+                    partial_matches.append(lnk)
+
+        if partial_matches:
+            # เลือกชื่อที่สั้นที่สุด (ใกล้เคียงคำค้นหามากที่สุด)
+            return str(min(partial_matches, key=lambda p: len(p.stem)))
+        return None
+
+    def _find_store_app(self, name: str) -> str | None:
+        """ค้นหาแอปจาก Microsoft Store (UWP) ผ่าน Get-StartApps"""
+        query = name.lower().removesuffix(".exe").strip().replace("'", "''")
+        result = subprocess.run(
+            [
+                "powershell", "-NoProfile", "-Command",
+                # เทียบทั้งชื่อที่แสดง และ AppID (กรณี Windows ภาษาไทยชื่อแอปจะเป็นภาษาไทย)
+                f"Get-StartApps | Where-Object {{ $_.Name -like '*{query}*' -or $_.AppID -like '*{query}*' }} "
+                "| Select-Object -First 1 -ExpandProperty AppID",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        app_id = result.stdout.strip()
+        return f"shell:AppsFolder\\{app_id}" if app_id else None
+
+    def _resolve_app(self, target: str) -> str | None:
+        """แปลงชื่อโปรแกรมให้เป็น path/คำสั่งที่เปิดได้จริง"""
+        # 1. path ที่มีอยู่จริง หรือโปรแกรมใน PATH (เช่น notepad.exe)
+        if Path(target).exists():
+            return target
+        found = shutil.which(target) or shutil.which(f"{target}.exe")
+        if found:
+            return found
+        # 2. shortcut ใน Start Menu (เช่น LINE, Discord, Chrome)
+        shortcut = self._find_start_menu_shortcut(target)
+        if shortcut:
+            return shortcut
+        # 3. แอปจาก Microsoft Store
+        return self._find_store_app(target)
+
     def open_app(self, target: str) -> str:
         """เปิดโปรแกรมหรือไฟล์ด้วยค่าเริ่มต้นของระบบ"""
         if not target:
             return "ไม่ได้ระบุชื่อโปรแกรมหรือไฟล์ที่ต้องการเปิดค่ะ"
-        print(f"[Actions] กำลังเปิด: {target}")
-        os.startfile(target)
+        resolved = self._resolve_app(target)
+        if not resolved:
+            print(f"[Actions] ไม่พบโปรแกรม: {target}")
+            return f"ไม่พบโปรแกรม {target} ในเครื่องค่ะ"
+        print(f"[Actions] กำลังเปิด: {target} -> {resolved}")
+        os.startfile(resolved)
         return f"เปิด {target} เรียบร้อยแล้ว"
 
     def close_app(self, process_name: str) -> str:
