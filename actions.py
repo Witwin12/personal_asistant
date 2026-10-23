@@ -1,12 +1,14 @@
 import os
+import re
 import subprocess
 import urllib.parse
+import urllib.request
 import webbrowser
 from pathlib import Path
 
 
 class OSActions:
-    """คำสั่งเปิด/ปิดโปรแกรม เปิดเว็บไซต์ ค้นหาข้อมูล และจัดการไฟล์ในเครื่อง (OS Commands)"""
+    """คำสั่งเปิด/ปิดโปรแกรม เปิดเว็บไซต์ ค้นหาข้อมูล เล่นเพลง/วิดีโอ และจัดการไฟล์ในเครื่อง (OS Commands)"""
 
     def __init__(self, workspace_dir: str | None = None):
         self.workspace_dir = Path(workspace_dir) if workspace_dir else Path.cwd()
@@ -35,6 +37,9 @@ class OSActions:
             elif action == "search_youtube":
                 query = target or content
                 return self.search_youtube(query)
+            elif action == "play_youtube":
+                query = target or content
+                return self.play_youtube(query)
             elif action == "create_file":
                 return self.write_file(target, content="")
             elif action == "write_file":
@@ -81,6 +86,49 @@ class OSActions:
         print(f"[Actions] กำลังค้นหาใน YouTube: {query} ({search_url})")
         webbrowser.open(search_url)
         return f"ค้นหา {query} ใน YouTube เรียบร้อยแล้ว"
+
+    def play_youtube(self, query: str) -> str:
+        """ค้นหาและเปิดเล่นวิดีโอหรือเพลงแรกที่ตรงกับคำค้นหาบน YouTube ทันที"""
+        if not query:
+            return "ไม่ได้ระบุชื่อเพลงหรือวิดีโอที่ต้องการเล่นค่ะ"
+
+        # หากผู้ใช้ส่งเป็นลิงก์ YouTube มาโดยตรง ให้เปิดทันที
+        if query.startswith(("http://", "https://")) and (
+            "youtube.com/" in query or "youtu.be/" in query
+        ):
+            print(f"[Actions] กำลังเล่นวิดีโอจากลิงก์: {query}")
+            webbrowser.open(query)
+            return f"เปิดเล่นวิดีโอ {query} เรียบร้อยแล้ว"
+
+        encoded_query = urllib.parse.quote_plus(query)
+        search_url = f"https://www.youtube.com/results?search_query={encoded_query}"
+
+        try:
+            req = urllib.request.Request(
+                search_url,
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/122.0.0.0 Safari/537.36"
+                    )
+                },
+            )
+            with urllib.request.urlopen(req, timeout=5) as response:
+                html = response.read().decode("utf-8", errors="ignore")
+
+            video_ids = re.findall(r"watch\?v=([a-zA-Z0-9_-]{11})", html)
+            if video_ids:
+                watch_url = f"https://www.youtube.com/watch?v={video_ids[0]}"
+                print(f"[Actions] กำลังเปิดเล่นบน YouTube: {query} -> {watch_url}")
+                webbrowser.open(watch_url)
+                return f"กำลังเล่น {query} บน YouTube"
+        except Exception as e:
+            print(f"[Actions] ดึงลิงก์วิดีโอโดยตรงไม่สำเร็จ ใช้หน้าค้นหาแทน: {e}")
+
+        # Fallback: หากดึง video_id ไม่ได้ ให้เปิดหน้าผลการค้นหาแทน
+        webbrowser.open(search_url)
+        return f"เปิดผลการค้นหา {query} บน YouTube เรียบร้อยแล้ว"
 
     def open_app(self, target: str) -> str:
         """เปิดโปรแกรมหรือไฟล์ด้วยค่าเริ่มต้นของระบบ"""
