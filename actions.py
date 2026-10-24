@@ -2,15 +2,58 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import urllib.parse
 import urllib.request
 import webbrowser
 from pathlib import Path
 
+IS_WINDOWS = sys.platform == "win32"
+IS_MAC = sys.platform == "darwin"
+
 START_MENU_DIRS = [
     Path(os.environ.get("APPDATA", "")) / "Microsoft/Windows/Start Menu/Programs",
     Path(os.environ.get("PROGRAMDATA", "")) / "Microsoft/Windows/Start Menu/Programs",
 ]
+MAC_APP_DIRS = [
+    Path("/Applications"),
+    Path("/System/Applications"),
+    Path("/System/Applications/Utilities"),
+    Path.home() / "Applications",
+]
+LINUX_APP_DIRS = [
+    Path("/usr/share/applications"),
+    Path("/var/lib/flatpak/exports/share/applications"),
+    Path("/var/lib/snapd/desktop/applications"),
+    Path.home() / ".local/share/applications",
+]
+
+# แปลงชื่อคำสั่งพื้นฐานให้ตรงกับโปรแกรมเริ่มต้นของแต่ละ OS
+APP_ALIASES = {
+    "win32": {
+        "calculator": "calc.exe",
+        "textedit": "notepad.exe",
+        "gedit": "notepad.exe",
+    },
+    "darwin": {
+        "notepad": "TextEdit",
+        "calc": "Calculator",
+        "calculator": "Calculator",
+        "explorer": "Finder",
+        "mspaint": "Preview",
+        "cmd": "Terminal",
+        "powershell": "Terminal",
+    },
+    "linux": {
+        "notepad": "gedit",
+        "calc": "gnome-calculator",
+        "calculator": "gnome-calculator",
+        "explorer": "nautilus",
+        "cmd": "x-terminal-emulator",
+        "powershell": "x-terminal-emulator",
+    },
+}
+
 BROWSER_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
@@ -117,37 +160,37 @@ class OSActions:
         self._open_url(search_url, "เปิดหน้าผลการค้นหา YouTube")
         return f"เปิดผลการค้นหา {query} บน YouTube เรียบร้อยแล้ว"
 
-    # ---------- โปรแกรม ----------
+    # ---------- โปรแกรม (รองรับ Windows, macOS, Linux) ----------
 
     @staticmethod
-    def _find_start_menu_shortcut(query: str) -> str | None:
-        """ค้นหา shortcut (.lnk) ของโปรแกรมใน Start Menu ตามชื่อ"""
+    def _best_path_match(candidates: list[Path], query: str) -> str | None:
+        """เลือกไฟล์ที่ชื่อตรงกับคำค้นหามากที่สุด (ตรงเป๊ะ หรือชื่อสั้นที่สุดที่มีคำค้นหา)"""
         partial_matches = []
-        for base in START_MENU_DIRS:
-            if not base.exists():
+        for path in candidates:
+            stem = path.stem.lower()
+            if "uninstall" in stem:
                 continue
-            for lnk in base.rglob("*.lnk"):
-                stem = lnk.stem.lower()
-                if "uninstall" in stem:
-                    continue
-                if stem == query:
-                    return str(lnk)  # ชื่อตรงเป๊ะ ใช้ทันที
-                if query in stem:
-                    partial_matches.append(lnk)
-
+            if stem == query:
+                return str(path)
+            if query in stem:
+                partial_matches.append(path)
         if partial_matches:
-            # เลือกชื่อที่สั้นที่สุด (ใกล้เคียงคำค้นหามากที่สุด)
             return str(min(partial_matches, key=lambda p: len(p.stem)))
         return None
 
+    @classmethod
+    def _find_start_menu_shortcut(cls, query: str) -> str | None:
+        """[Windows] ค้นหา shortcut (.lnk) ของโปรแกรมใน Start Menu ตามชื่อ"""
+        lnks = [lnk for base in START_MENU_DIRS if base.exists() for lnk in base.rglob("*.lnk")]
+        return cls._best_path_match(lnks, query)
+
     @staticmethod
     def _find_store_app(query: str) -> str | None:
-        """ค้นหาแอปจาก Microsoft Store (UWP) ผ่าน Get-StartApps"""
+        """[Windows] ค้นหาแอปจาก Microsoft Store (UWP) ผ่าน Get-StartApps"""
         q = query.replace("'", "''")
         result = subprocess.run(
             [
                 "powershell", "-NoProfile", "-Command",
-                # เทียบทั้งชื่อที่แสดง และ AppID (กรณี Windows ภาษาไทยชื่อแอปจะเป็นภาษาไทย)
                 f"Get-StartApps | Where-Object {{ $_.Name -like '*{q}*' -or $_.AppID -like '*{q}*' }} "
                 "| Select-Object -First 1 -ExpandProperty AppID",
             ],
@@ -158,20 +201,98 @@ class OSActions:
         app_id = result.stdout.strip()
         return f"shell:AppsFolder\\{app_id}" if app_id else None
 
+    @classmethod
+    def _find_mac_app(cls, query: str) -> str | None:
+        """[macOS] ค้นหาแอปพลิเคชัน (.app) ในโฟลเดอร์ Applications"""
+        apps = []
+        for base in MAC_APP_DIRS:
+            if base.exists():
+                apps.extend(base.glob("*.app"))
+                apps.extend(base.glob("*/*.app"))
+        return cls._best_path_match(apps, query)
+
+    @classmethod
+    def _find_linux_desktop_app(cls, query: str) -> str | None:
+        """[Linux] ค้นหาไฟล์ .desktop จากโฟลเดอร์แอปพลิเคชันของระบบ"""
+        desktop_files = [
+            f for base in LINUX_APP_DIRS if base.exists() for f in base.rglob("*.desktop")
+        ]
+        # 1. เทียบจากชื่อไฟล์ .desktop
+        matched = cls._best_path_match(desktop_files, query)
+        if matched:
+            return matched
+
+        # 2. เทียบจากฟิลด์ Name= หรือ Exec= ภายในไฟล์ .desktop
+        for f in desktop_files:
+            try:
+                text = f.read_text(encoding="utf-8", errors="ignore").lower()
+                if re.search(rf"^(name|exec)=.*{re.escape(query)}", text, flags=re.MULTILINE):
+                    return str(f)
+            except OSError:
+                continue
+        return None
+
     def _resolve_app(self, target: str) -> str | None:
-        """แปลงชื่อโปรแกรมให้เป็น path/คำสั่งที่เปิดได้จริง"""
-        # 1. path ที่มีอยู่จริง หรือโปรแกรมใน PATH (เช่น notepad.exe)
+        """แปลงชื่อโปรแกรมให้เป็น path หรือคำสั่งที่เปิดได้จริงตามระบบปฏิบัติการ"""
         if Path(target).exists():
             return target
-        found = shutil.which(target) or shutil.which(f"{target}.exe")
-        if found:
-            return found
-        # 2. shortcut ใน Start Menu (เช่น LINE, Discord, Chrome) 3. แอปจาก Microsoft Store
-        query = target.lower().removesuffix(".exe").strip()
-        return self._find_start_menu_shortcut(query) or self._find_store_app(query)
+
+        clean_name = re.sub(r"\.exe$", "", target.strip(), flags=re.IGNORECASE)
+        query = clean_name.lower()
+
+        # แปลงชื่อโปรแกรมพื้นฐานให้ตรงกับ OS ปัจจุบัน (เช่น notepad -> TextEdit บน macOS)
+        os_key = "win32" if IS_WINDOWS else ("darwin" if IS_MAC else "linux")
+        mapped = APP_ALIASES.get(os_key, {}).get(query, clean_name)
+        mapped_query = re.sub(r"\.exe$", "", mapped, flags=re.IGNORECASE).lower()
+
+        # ค้นหาใน PATH ของระบบ
+        for candidate in (mapped, clean_name, mapped_query, query):
+            found = shutil.which(candidate) or (
+                shutil.which(f"{candidate}.exe") if IS_WINDOWS else None
+            )
+            if found:
+                return found
+
+        if IS_WINDOWS:
+            return self._find_start_menu_shortcut(mapped_query) or self._find_store_app(mapped_query)
+        if IS_MAC:
+            return self._find_mac_app(mapped_query) or self._find_mac_app(query)
+        return self._find_linux_desktop_app(mapped_query) or self._find_linux_desktop_app(query)
+
+    @staticmethod
+    def _launch_resolved(resolved: str) -> None:
+        """สั่งเปิดโปรแกรมหรือไฟล์ด้วยวิธีของแต่ละระบบปฏิบัติการ"""
+        if IS_WINDOWS:
+            os.startfile(resolved)
+            return
+
+        if IS_MAC:
+            cmd = ["open", "-a", resolved] if resolved.endswith(".app") else ["open", resolved]
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return
+
+        # Linux
+        if resolved.endswith(".desktop"):
+            if shutil.which("gtk-launch"):
+                cmd = ["gtk-launch", Path(resolved).name]
+            elif shutil.which("gio"):
+                cmd = ["gio", "launch", resolved]
+            else:
+                cmd = ["xdg-open", resolved]
+        elif Path(resolved).exists() and not os.access(resolved, os.X_OK):
+            cmd = ["xdg-open", resolved]
+        else:
+            cmd = [resolved]
+
+        subprocess.Popen(
+            cmd,
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
     def open_app(self, target: str) -> str:
-        """เปิดโปรแกรมหรือไฟล์ด้วยค่าเริ่มต้นของระบบ"""
+        """เปิดโปรแกรมหรือไฟล์ด้วยค่าเริ่มต้นของระบบ (Windows / macOS / Linux)"""
         if not target:
             return "ไม่ได้ระบุชื่อโปรแกรมหรือไฟล์ที่ต้องการเปิดค่ะ"
         resolved = self._resolve_app(target)
@@ -179,22 +300,28 @@ class OSActions:
             print(f"[Actions] ไม่พบโปรแกรม: {target}")
             return f"ไม่พบโปรแกรม {target} ในเครื่องค่ะ"
         print(f"[Actions] กำลังเปิด: {target} -> {resolved}")
-        os.startfile(resolved)
+        self._launch_resolved(resolved)
         return f"เปิด {target} เรียบร้อยแล้ว"
 
     def close_app(self, process_name: str) -> str:
-        """ปิดโปรแกรมตามชื่อโปรเซส (บน Windows ใช้ taskkill)"""
+        """ปิดโปรแกรมตามชื่อโปรเซส (Windows ใช้ taskkill, macOS/Linux ใช้ pkill)"""
         if not process_name:
             return "ไม่ได้ระบุชื่อโปรแกรมที่ต้องการปิดค่ะ"
-        if not process_name.lower().endswith(".exe"):
-            process_name += ".exe"
-        print(f"[Actions] กำลังปิดโปรเซส: {process_name}")
-        result = subprocess.run(
-            ["taskkill", "/F", "/IM", process_name], capture_output=True, check=False
-        )
+
+        clean_name = re.sub(r"\.exe$", "", process_name.strip(), flags=re.IGNORECASE)
+        if IS_WINDOWS:
+            exe_name = f"{clean_name}.exe"
+            cmd = ["taskkill", "/F", "/IM", exe_name]
+            display_name = exe_name
+        else:
+            cmd = ["pkill", "-i", "-f", clean_name]
+            display_name = clean_name
+
+        print(f"[Actions] กำลังปิดโปรเซส: {display_name}")
+        result = subprocess.run(cmd, capture_output=True, check=False)
         if result.returncode != 0:
-            return f"ไม่พบโปรแกรม {process_name} ที่กำลังทำงานอยู่ค่ะ"
-        return f"สั่งปิด {process_name} เรียบร้อยแล้ว"
+            return f"ไม่พบโปรแกรม {display_name} ที่กำลังทำงานอยู่ค่ะ"
+        return f"สั่งปิด {display_name} เรียบร้อยแล้ว"
 
     # ---------- ไฟล์ ----------
 

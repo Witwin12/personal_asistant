@@ -1,6 +1,6 @@
 # 🎙️ My Voice AI (ไอวี่ - ผู้ช่วยอัจฉริยะสั่งงานด้วยเสียง)
 
-ระบบผู้ช่วยอัจฉริยะสั่งงานด้วยเสียงภาษาไทยบน Windows ที่รับคำสั่งผ่านไมโครโฟน ตีความคำสั่งด้วย **Google Gemini** สั่งงานระบบปฏิบัติการ (เปิด/ปิดโปรแกรม เปิดเว็บ ค้นหาข้อมูล เล่นเพลง YouTube จัดการไฟล์) และโต้ตอบกลับด้วยเสียงพูดภาษาไทยที่เป็นธรรมชาติ
+ระบบผู้ช่วยอัจฉริยะสั่งงานด้วยเสียงภาษาไทย **ทำงานได้ทั้ง Windows MacOS และ Linux** ที่รับคำสั่งผ่านไมโครโฟน ตีความคำสั่งด้วย **Google Gemini** สั่งงานระบบปฏิบัติการ (เปิด/ปิดโปรแกรม เปิดเว็บ ค้นหาข้อมูล เล่นเพลง YouTube จัดการไฟล์) และโต้ตอบกลับด้วยเสียงพูดภาษาไทยที่เป็นธรรมชาติ
 
 ---
 
@@ -33,8 +33,8 @@ my_voice_ai/
 
 | Action | ฟังก์ชันใน `OSActions` | รายละเอียดการทำงาน | ตัวอย่างคำสั่งเสียง |
 | :--- | :--- | :--- | :--- |
-| **`open_app`** | `open_app(target)` | ค้นหาและเปิดโปรแกรมจาก `PATH`, Start Menu Shortcut (`.lnk`) หรือแอป Microsoft Store (UWP) | *"เปิดไลน์ให้หน่อย"*, *"เปิดเครื่องคิดเลข"*, *"เปิด Notepad"* |
-| **`close_app`** | `close_app(process_name)` | ปิดโปรแกรมที่กำลังทำงานอยู่ด้วย `taskkill` | *"ปิดโปรแกรม Notepad"* |
+| **`open_app`** | `open_app(target)` | ค้นหาและเปิดโปรแกรมอัตโนมัติตาม OS (Windows: `PATH`/Start Menu/Store, macOS: `Applications` `.app`, Linux: `PATH`/`.desktop`) | *"เปิดไลน์ให้หน่อย"*, *"เปิดเครื่องคิดเลข"*, *"เปิด Notepad"* |
+| **`close_app`** | `close_app(process_name)` | ปิดโปรแกรมที่กำลังทำงานอยู่ (`taskkill` บน Windows / `pkill` บน macOS และ Linux) | *"ปิดโปรแกรม Notepad"* |
 | **`open_website`** | `open_website(url)` | เปิดเว็บไซต์ด้วยเบราว์เซอร์หลักของเครื่อง | *"เปิดเว็บ github.com"*, *"เข้าเว็บยูทูป"* |
 | **`search_google`** | `search_google(query)` | เปิดเบราว์เซอร์และค้นหาคำค้นใน Google | *"ค้นหากูเกิลว่า วิธีทำข้าวผัดกุ้ง"* |
 | **`play_youtube`** | `play_youtube(query)` | ค้นหาและ**เปิดเล่น**วิดีโอ/เพลงแรกที่ตรงกับคำค้นบน YouTube ทันที | *"เปิดเพลงทรงอย่างแบด"*, *"อยากฟังเพลงแจ๊สเพราะๆ"* |
@@ -60,23 +60,39 @@ my_voice_ai/
 
 ## 🚀 วิธีติดตั้งและใช้งาน (Installation & Usage)
 
-### 1. สร้างและเปิดใช้งาน Virtual Environment
-เปิด PowerShell ในโฟลเดอร์โปรเจกต์ แล้วรันคำสั่ง:
-```powershell
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-```
+### 1. ติดตั้งไลบรารีเสียงระดับระบบ (เฉพาะ macOS / Linux สำหรับ PyAudio)
+- **macOS (Homebrew)**:
+  ```bash
+  brew install portaudio
+  ```
+  *(หมายเหตุ: บน macOS ต้องอนุญาตให้ Terminal / IDE เข้าถึงไมโครโฟนที่ **System Settings > Privacy & Security > Microphone**)*
+- **Linux (Ubuntu / Debian)**:
+  ```bash
+  sudo apt update && sudo apt install -y python3-pyaudio portaudio19-dev libasound2-dev
+  ```
 
-### 2. ติดตั้งไลบรารีที่จำเป็น
-```powershell
+### 2. สร้างและเปิดใช้งาน Virtual Environment
+- **Windows (PowerShell)**:
+  ```powershell
+  python -m venv venv
+  .\venv\Scripts\Activate.ps1
+  ```
+- **macOS / Linux (Bash / Zsh)**:
+  ```bash
+  python3 -m venv venv
+  source venv/bin/activate
+  ```
+
+### 3. ติดตั้งไลบรารีที่จำเป็น
+```bash
 pip install -r requirements.txt
 ```
 
-### 3. ตั้งค่าไฟล์ `.env`
+### 4. ตั้งค่าไฟล์ `.env`
 คัดลอกไฟล์ `.env.example` ไปเป็น `.env` แล้วใส่ค่า `GEMINI_API_KEY` ของคุณ (รับคีย์ฟรีได้ที่ [Google AI Studio](https://aistudio.google.com/)):
-```powershell
-Copy-Item .env.example .env
-```
+- **Windows**: `Copy-Item .env.example .env`
+- **macOS / Linux**: `cp .env.example .env`
+
 ตัวอย่างการตั้งค่าในไฟล์ `.env`:
 ```ini
 GEMINI_API_KEY=ใส่_API_KEY_ของคุณที่นี่
@@ -87,8 +103,8 @@ TTS_PROVIDER=edge-tts
 EDGE_TTS_VOICE=th-TH-PremwadeeNeural
 ```
 
-### 4. เริ่มต้นใช้งานผู้ช่วยสั่งงานด้วยเสียง
-```powershell
+### 5. เริ่มต้นใช้งานผู้ช่วยสั่งงานด้วยเสียง
+```bash
 python main.py
 ```
 - เมื่อขึ้นข้อความ **`[Listener] กำลังฟัง... (พูดคำสั่งได้เลย)`** สามารถพูดใส่ไมโครโฟนได้ทันที

@@ -1,13 +1,14 @@
 import os
 import json
+import platform
 from google import genai
 from google.genai import types
 
 # รายการ action ที่รองรับ: ชื่อ -> ความหมายของ target / content
 ACTIONS = {
     "none": "คุยทั่วไป ไม่ต้องสั่งงาน สามารถคุยเล่นให้เหมือนเพื่อนได้",
-    "open_app": "target=ชื่อโปรแกรม เช่น notepad.exe",
-    "close_app": "target=ชื่อโปรเซส",
+    "open_app": "target=ชื่อโปรแกรม เช่น notepad, calculator, chrome, line",
+    "close_app": "target=ชื่อโปรเซสหรือโปรแกรม",
     "open_website": "target=URL",
     "search_google": "target=คำค้นหา",
     "search_youtube": "target=คำค้นหา (แสดงผลการค้นหา)",
@@ -20,7 +21,7 @@ ACTIONS = {
 }
 
 SYSTEM_PROMPT = (
-    "คุณคือ ไอวี่ เด็กสาวที่เป็นเสมือนเพื่อนที่มีนิสัยปากไม่ตรงกับใจแต่ก็คอยทำให้ตลอด ช่วยสั่งงานด้วยเสียง ตีความคำสั่งผู้ใช้แล้วเลือก action:\n"
+    f"คุณคือ ไอวี่ เด็กสาวที่เป็นเสมือนเพื่อนที่มีนิสัยปากไม่ตรงกับใจแต่ก็คอยทำให้ตลอด ช่วยสั่งงานด้วยเสียง (OS ปัจจุบัน: {platform.system()}) ตีความคำสั่งผู้ใช้แล้วเลือก action:\n"
     + "\n".join(f"- {name}: {desc}" for name, desc in ACTIONS.items())
     + "\nreply = คำตอบภาษาไทยเป็นผู้หญิง เป็นธรรมชาติ สำหรับอ่านออกเสียง"
 )
