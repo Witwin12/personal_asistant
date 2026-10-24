@@ -7,12 +7,8 @@ from brain import AIBrain
 from actions import OSActions
 from speaker import VoiceSpeaker
 
-# โหลดค่าตั้งค่าจากไฟล์ .env
-env_path = Path(__file__).resolve().parent / ".env"
-if env_path.exists():
-    load_dotenv(dotenv_path=env_path)
-else:
-    load_dotenv()
+# โหลดค่าตั้งค่าจากไฟล์ .env ที่อยู่โฟลเดอร์เดียวกับไฟล์นี้
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 
 def main():
@@ -22,15 +18,12 @@ def main():
     print("==========================================")
 
     try:
-        stt_lang = os.getenv("STT_LANGUAGE", "th-TH")
         timeout = int(os.getenv("LISTEN_TIMEOUT", "5"))
         phrase_limit = int(os.getenv("PHRASE_TIME_LIMIT", "10"))
-        gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-        workspace_dir = os.getenv("WORKSPACE_DIR", "./workspace")
 
-        listener = VoiceListener(language=stt_lang)
-        brain = AIBrain(model_name=gemini_model)
-        actions = OSActions(workspace_dir=workspace_dir)
+        listener = VoiceListener(language=os.getenv("STT_LANGUAGE", "th-TH"))
+        brain = AIBrain(model_name=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
+        actions = OSActions(workspace_dir=os.getenv("WORKSPACE_DIR", "./workspace"))
         speaker = VoiceSpeaker()
     except Exception as e:
         print(f"[System] ไม่สามารถเริ่มต้นระบบได้: {e}")
@@ -47,18 +40,17 @@ def main():
 
             # 2. ส่งให้ Gemini ตีความคำสั่ง (Brain)
             decision = brain.process(user_text)
-            action_name = decision.get("action", "none")
-            params = decision.get("params", {})
-            reply_text = decision.get("reply", "")
+            action_name = decision["action"]
+            reply_text = decision["reply"]
 
             # 3. สั่งงานระบบปฏิบัติการ/จัดการไฟล์ (OS Actions)
-            action_result = actions.execute(action_name, params)
+            action_result = actions.execute(action_name, decision["params"])
 
             # หากเป็นคำสั่งอ่านไฟล์ ให้นำเนื้อหาไฟล์มาพูดต่อท้ายด้วย
             if action_name == "read_file" and action_result:
                 reply_text = f"{reply_text} เนื้อหาคือ {action_result}"
 
-            # 4. สร้างเสียงตอบกลับผู้ใช้ (Edge-TTS / ElevenLabs)
+            # 4. สร้างเสียงตอบกลับผู้ใช้ (TTS ตาม TTS_PROVIDER)
             speaker.speak(reply_text)
 
             # ตรวจสอบคำสั่งออกจากโปรแกรม

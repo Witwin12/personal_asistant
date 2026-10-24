@@ -2,21 +2,16 @@
 venv/
 .venv/
 env/
-ENV/
-my_voice_ai/venv/
-my_voice_ai/.venv/
 
 # Environment Variables & Secrets
 .env
 .env*.local
-my_voice_ai/.env
-!*.example
+!.env.example
+agent.txt
 
 # Python Bytecode & Cache
 __pycache__/
 *.py[cod]
-*$py.class
-*.pyd
 
 # Operating System Files
 Thumbs.db
@@ -26,8 +21,6 @@ Desktop.ini
 # IDEs & Editors
 .vscode/
 .idea/
-*.sublime-project
-*.sublime-workspace
 
 # Audio / Temp Files
 *.mp3
@@ -36,6 +29,4 @@ Desktop.ini
 
 # Dynamic Bot Workspace & Logs
 workspace/
-my_voice_ai/workspace/
 *.log
-agent.txt

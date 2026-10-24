@@ -68,12 +68,8 @@ class AIBrain:
                     temperature=0.2,
                 ),
             )
-            result = json.loads(response.text)
-            return {
-                "action": result.get("action", "none"),
-                "params": result.get("params", {}),
-                "reply": result.get("reply", "ขออภัยค่ะ ฉันไม่เข้าใจคำสั่ง"),
-            }
+            # RESPONSE_SCHEMA บังคับให้มีครบทุก key อยู่แล้ว
+            return json.loads(response.text)
         except Exception as e:
             print(f"[Brain] เกิดข้อผิดพลาดในการเชื่อมต่อ Gemini: {e}")
             return {
